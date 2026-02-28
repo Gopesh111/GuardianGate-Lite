@@ -1,0 +1,6 @@
+cache:
+  threshold: 0.85
+  dimension: 384
+budget:
+  daily_limit_usd: 0.50
+  cost_per_call: 0.002

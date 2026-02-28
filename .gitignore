@@ -1,0 +1,5 @@
+.env
+__pycache__/
+metrics.json
+semantic_cache.index
+cache_payloads.json
