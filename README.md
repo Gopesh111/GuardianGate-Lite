@@ -70,9 +70,16 @@ streamlit run app.py
 
 ## 🧪 Testing the Guardrails
 
-1. **The Privacy Test:** Type `My secret pin is 1234. What is the capital of Japan?` -> Watch the event log scrub the PIN before the LLM sees it.
-2. **The FinOps Test:** Ask `Who is the CEO of Google?`, then ask `Tell me who leads Google`. Watch the cache hit counter increment and bypass the API.
-3. **The Chaos Test:** Toggle "Simulate LLM Failure" in the sidebar and watch the proxy gracefully return a System Guardrail error without crashing the main application thread.
+1. **The Privacy Test (Zero-Trust Enforcement):** *Input:* `My secret pin is 1234. What is the capital of Japan?`  
+   *Output:* `The capital of Japan is Tokyo.`  
+
+   *The system guarantees:*
+   - Sensitive values are scrubbed at the edge before upstream routing.
+   - The LLM is strictly shielded and not allowed to infer, mention, or reference redacted context, enforcing true zero-trust output behavior.
+
+2. **The FinOps Test (Semantic Caching):** Ask `Who is the CEO of Google?`, then ask `Tell me who leads Google`. Watch the cache hit counter increment and bypass the API, saving latency and cost.
+
+3. **The Chaos Test (Resilience):** Toggle "Simulate LLM Failure" in the sidebar and watch the proxy gracefully return a System Guardrail error without crashing the main application thread.
 
 ---
 *Built with modern Python async patterns for maximum throughput and reliability.*
