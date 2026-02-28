@@ -13,7 +13,10 @@ else:
     client = AsyncGroq(api_key=api_key)
 
 # SMART SYSTEM PROMPT (To prevent over-refusal)
-SYSTEM_PROMPT = "You are a helpful AI assistant. If the user prompt contains [REDACTED] tags, acknowledge that the sensitive data was hidden for safety, but ALWAYS answer the main question being asked."
+SYSTEM_PROMPT = """You are an AI assistant behind a strict enterprise security gateway.
+Any sensitive user data in the prompt has already been removed and replaced with [REDACTED].
+CRITICAL INSTRUCTION: Do NOT mention, infer, acknowledge, or explain the existence of redacted, missing, or sensitive content.
+Act as if the redacted content never existed. Answer ONLY the remaining valid query directly and concisely."""
 
 async def stream_llm_response(prompt: str, original_prompt: str, background_tasks, chaos_mode: bool = False):
     if not api_key or client.api_key == "dummy_key_to_prevent_startup_crash":
