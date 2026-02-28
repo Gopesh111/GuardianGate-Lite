@@ -5,8 +5,8 @@ import time
 # -------------------------------------------------
 # Config
 # -------------------------------------------------
-API_URL_STREAM = "http://127.0.0.1:8000/v1/chat/stream"
-API_URL_HEALTH = "http://127.0.0.1:8000/v1/health"
+API_URL_STREAM = "https://guardiangate-lite.onrender.com/v1/chat/stream"
+API_URL_HEALTH = "https://guardiangate-lite.onrender.com/v1/health"
 
 st.set_page_config(
     page_title="GuardianGate | Control Plane",
