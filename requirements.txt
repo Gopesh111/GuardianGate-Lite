@@ -5,3 +5,5 @@ fastembed
 faiss-cpu
 numpy
 PyYAML==6.0.1
+groq
+python-dotenv
