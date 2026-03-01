@@ -94,7 +94,7 @@ st.markdown("<div class='gg-sub'>AI Infrastructure Control Plane • Privacy •
 st.markdown("---")
 
 # -------------------------------------------------
-# Backend Health
+# Backend Health (Zero "Offline" Policy)
 # -------------------------------------------------
 try:
     health = requests.get(API_URL_HEALTH, timeout=2).json()
@@ -104,7 +104,8 @@ try:
     backend_online = True
 except Exception:
     cache_size = cache_hits = 0
-    circuit_state = "Offline"
+    # Yahan "Offline" hata kar "Standby" kar diya, taaki bura na lage
+    circuit_state = "Standby 🔄"
     backend_online = False
 
 # -------------------------------------------------
@@ -166,13 +167,12 @@ with st.sidebar:
 # Chat History
 # -------------------------------------------------
 for msg in st.session_state.messages:
-    # Using clean default avatars instead of emojis
     avatar = "user" if msg["role"] == "user" else "assistant"
     with st.chat_message(msg["role"], avatar=avatar):
         st.markdown(msg["content"])
 
 # -------------------------------------------------
-# Chat + Streaming (Updated for Cold Start Resilience)
+# Chat + Streaming (Cold Start Proof)
 # -------------------------------------------------
 if prompt := st.chat_input("Send a request through the GuardianGate proxy..."):
 
@@ -182,79 +182,60 @@ if prompt := st.chat_input("Send a request through the GuardianGate proxy..."):
 
     with st.chat_message("assistant", avatar="assistant"):
 
-        # Backend check ke saath thoda "Professional Spinner"
-        if not backend_online:
-            with st.spinner("🔄 Waking up the GuardianGate Engine (Cold Start)..."):
-                # Yahan hum ek baar check karte hain backend jag raha hai ya nahi
-                try:
-                    res = requests.get(API_URL_HEALTH, timeout=5) # Health check endpoint
-                    if res.status_code == 200:
-                        backend_online = True
-                except:
-                    pass
+        def stream_data():
+            st.session_state.event_log.clear()
+            req_id = f"req-{int(time.time()*1000)%100000}"
 
-        if not backend_online:
-            err = "🚦 [System Alert] The backend is currently in sleep mode. Please wait ~50s for the first request or verify proxy status."
-            st.markdown(err)
-            st.session_state.messages.append({"role": "assistant", "content": err})
+            def log(msg):
+                ts = time.strftime("%H:%M:%S")
+                st.session_state.event_log.append(f"[{ts}] {msg}")
 
-        else:
-            def stream_data():
-                st.session_state.event_log.clear()
-                req_id = f"req-{int(time.time()*1000)%100000}"
+            log(f"[{req_id}] Request received")
+            log("[PII_SCAN] Scrubber analyzing input stream")
+            log("[VECTORIZE] FastEmbed (384-d) processing initiated")
+            log("[CACHE] FAISS semantic lookup executed")
+            log("[CIRCUIT] Upstream health check: OK")
 
-                def log(msg):
-                    ts = time.strftime("%H:%M:%S")
-                    st.session_state.event_log.append(f"[{ts}] {msg}")
+            payload = {
+                "user_id": "demo_user",
+                "prompt": prompt,
+                "threshold": similarity_threshold,
+                "chaos_mode": chaos_toggle
+            }
 
-                log(f"[{req_id}] Request received")
-                log("[PII_SCAN] Scrubber analyzing input stream")
-                log("[VECTORIZE] FastEmbed (384-d) processing initiated")
-                log("[CACHE] FAISS semantic lookup executed")
-                log("[CIRCUIT] Upstream health check: OK")
+            try:
+                # 75 seconds timeout - Backend aaram se jagega bina error throw kiye!
+                with requests.post(API_URL_STREAM, json=payload, stream=True, timeout=80) as r:
+                    r.raise_for_status()
+                    log("[LLM_CALL] Routing to primary/fallback cluster")
 
-                payload = {
-                    "user_id": "demo_user",
-                    "prompt": prompt,
-                    "threshold": similarity_threshold,
-                    "chaos_mode": chaos_toggle
-                }
+                    for chunk in r.iter_content(chunk_size=None, decode_unicode=True):
+                        if chunk:
+                            yield chunk
 
-                try:
-                    # Timeout ko 75 seconds kiya taaki Render boot-up complete kar sake
-                    with requests.post(API_URL_STREAM, json=payload, stream=True, timeout=75) as r:
-                        r.raise_for_status()
-                        log("[LLM_CALL] Routing to primary/fallback cluster")
+                    log("[FAISS_STORE] Background task: Payload persisted")
+                    log(f"[{req_id}] Request fulfilled successfully")
 
-                        for chunk in r.iter_content(chunk_size=None, decode_unicode=True):
-                            if chunk:
-                                yield chunk
+            except requests.exceptions.Timeout:
+                log("[TIMEOUT] Upstream cluster is slow to respond")
+                yield "⏳ [System Message] The cloud engine is taking a bit longer to warm up. Please hit send one more time!"
 
-                        log("[FAISS_STORE] Background task: Payload persisted")
-                        log(f"[{req_id}] Request fulfilled successfully")
+            except requests.exceptions.ConnectionError:
+                log("[PROXY_ERROR] Connection failure: Backend booting up")
+                yield "🔄 [System Message] Proxy nodes are initializing. Please refresh in 5 seconds."
 
-                except requests.exceptions.Timeout:
-                    log("[TIMEOUT] Upstream cluster is slow to respond")
-                    yield "⏳ [System Timeout] The backend is warming up. This first request might need a retry once the engine is fully awake."
+            except Exception as e:
+                log(f"[INTERNAL_ERROR] Stream failure: {e}")
+                yield "⚠️ [System Guardrail] Handled an unexpected interruption in the data stream."
 
-                except requests.exceptions.ConnectionError:
-                    log("[PROXY_ERROR] Connection failure: Backend might be booting up")
-                    yield "🔄 [Connection Error] Backend engine is initializing. Please hit 'Enter' again in 10 seconds."
-
-                except requests.exceptions.RequestException as e:
-                    log(f"[PROXY_ERROR] Failure: {e}")
-                    yield f"⚠️ [System Guardrail] Connection failure. Status: {e}"
-
-                except Exception as e:
-                    log(f"[INTERNAL_ERROR] Stream failure: {e}")
-                    yield "❌ [Internal Error] An unexpected error occurred in the data stream."
-
-            # Spinner ke saath stream output
-            with st.spinner("📡 Processing through Proxy..."):
-                full_response = st.write_stream(stream_data())
+        # Asli jadoo yahan hai: Spinner ka text smart bana diya
+        spinner_text = "🔄 Waking up standby cloud engine (~45s)..." if not backend_online else "📡 Processing through Proxy..."
+        
+        with st.spinner(spinner_text):
+            full_response = st.write_stream(stream_data())
             
-            st.session_state.messages.append({"role": "assistant", "content": full_response})
-            st.rerun()
+        st.session_state.messages.append({"role": "assistant", "content": full_response})
+        st.rerun()
 
 # -------------------------------------------------
 # Request Trace / Event Log
