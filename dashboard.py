@@ -172,7 +172,7 @@ for msg in st.session_state.messages:
         st.markdown(msg["content"])
 
 # -------------------------------------------------
-# Chat + Streaming
+# Chat + Streaming (Updated for Cold Start Resilience)
 # -------------------------------------------------
 if prompt := st.chat_input("Send a request through the GuardianGate proxy..."):
 
@@ -182,8 +182,19 @@ if prompt := st.chat_input("Send a request through the GuardianGate proxy..."):
 
     with st.chat_message("assistant", avatar="assistant"):
 
+        # Backend check ke saath thoda "Professional Spinner"
         if not backend_online:
-            err = "[Connection Error] The GuardianGate backend is currently unreachable. Please verify proxy status."
+            with st.spinner("🔄 Waking up the GuardianGate Engine (Cold Start)..."):
+                # Yahan hum ek baar check karte hain backend jag raha hai ya nahi
+                try:
+                    res = requests.get(API_URL_HEALTH, timeout=5) # Health check endpoint
+                    if res.status_code == 200:
+                        backend_online = True
+                except:
+                    pass
+
+        if not backend_online:
+            err = "🚦 [System Alert] The backend is currently in sleep mode. Please wait ~50s for the first request or verify proxy status."
             st.markdown(err)
             st.session_state.messages.append({"role": "assistant", "content": err})
 
@@ -196,7 +207,6 @@ if prompt := st.chat_input("Send a request through the GuardianGate proxy..."):
                     ts = time.strftime("%H:%M:%S")
                     st.session_state.event_log.append(f"[{ts}] {msg}")
 
-                # Enterprise-style logs
                 log(f"[{req_id}] Request received")
                 log("[PII_SCAN] Scrubber analyzing input stream")
                 log("[VECTORIZE] FastEmbed (384-d) processing initiated")
@@ -211,7 +221,8 @@ if prompt := st.chat_input("Send a request through the GuardianGate proxy..."):
                 }
 
                 try:
-                    with requests.post(API_URL_STREAM, json=payload, stream=True, timeout=15) as r:
+                    # Timeout ko 75 seconds kiya taaki Render boot-up complete kar sake
+                    with requests.post(API_URL_STREAM, json=payload, stream=True, timeout=75) as r:
                         r.raise_for_status()
                         log("[LLM_CALL] Routing to primary/fallback cluster")
 
@@ -224,17 +235,24 @@ if prompt := st.chat_input("Send a request through the GuardianGate proxy..."):
 
                 except requests.exceptions.Timeout:
                     log("[TIMEOUT] Upstream cluster is slow to respond")
-                    yield "[System Timeout] The upstream LLM is taking too long to respond."
+                    yield "⏳ [System Timeout] The backend is warming up. This first request might need a retry once the engine is fully awake."
+
+                except requests.exceptions.ConnectionError:
+                    log("[PROXY_ERROR] Connection failure: Backend might be booting up")
+                    yield "🔄 [Connection Error] Backend engine is initializing. Please hit 'Enter' again in 10 seconds."
 
                 except requests.exceptions.RequestException as e:
-                    log(f"[PROXY_ERROR] Connection failure: {e}")
-                    yield "[System Guardrail] The upstream proxy returned an error. Fallback nodes may be offline."
+                    log(f"[PROXY_ERROR] Failure: {e}")
+                    yield f"⚠️ [System Guardrail] Connection failure. Status: {e}"
 
                 except Exception as e:
                     log(f"[INTERNAL_ERROR] Stream failure: {e}")
-                    yield "[System Guardrail] An unexpected error occurred in the data stream."
+                    yield "❌ [Internal Error] An unexpected error occurred in the data stream."
 
-            full_response = st.write_stream(stream_data())
+            # Spinner ke saath stream output
+            with st.spinner("📡 Processing through Proxy..."):
+                full_response = st.write_stream(stream_data())
+            
             st.session_state.messages.append({"role": "assistant", "content": full_response})
             st.rerun()
 
