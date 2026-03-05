@@ -82,4 +82,7 @@ streamlit run app.py
 3. **The Chaos Test (Resilience):** Toggle "Simulate LLM Failure" in the sidebar and watch the proxy gracefully return a System Guardrail error without crashing the main application thread.
 
 ---
+## License
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
 *Built with modern Python async patterns for maximum throughput and reliability.*
